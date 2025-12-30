@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:appmetrica.yandex.com)",
+      "Bash(npm install)"
+    ]
+  }
+}
