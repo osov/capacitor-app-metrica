@@ -1,3 +1,4 @@
+```
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { METRIKA_ID } from './storeConfig';
 
@@ -42,3 +43,4 @@ export async function trackEvent(eventName: string, params: object = {}) {
     console.error('[AppMetrica] Error:', error);
   }
 }
+```
