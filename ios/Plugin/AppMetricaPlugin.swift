@@ -123,59 +123,90 @@ public class AppMetricaPlugin: CAPPlugin {
 
         if let string = value as? String { return string }
 
-        // Вложенные объекты и массивы Android отдаёт как JSON-текст. Ключи
-        // сортируем с обеих сторон: у Foundation порядок словаря определяется
-        // хешем, воспроизвести порядок вставки из JS невозможно, поэтому
-        // единый детерминированный порядок задаёт сортировка (Android делает то
-        // же самое в toCanonicalJson).
-        let sanitized = sanitizeForJson(value)
-        if JSONSerialization.isValidJSONObject(sanitized),
-           let data = try? JSONSerialization.data(withJSONObject: sanitized, options: [.sortedKeys]),
-           let json = String(data: data, encoding: .utf8) {
-            return json
-        }
-
-        return String(describing: value)
+        // Вложенные объекты и массивы Android отдаёт как JSON-текст. Пишем его
+        // сами, а не через JSONSerialization: та сортирует ключи своим
+        // сравнением (без учёта регистра, с числовым порядком и по локали),
+        // не экранирует «/» и печатает числа по-своему - то есть тот же
+        // объект давал бы на двух платформах разный текст.
+        var out = ""
+        appendCanonicalJson(&out, value)
+        return out
     }
 
-    /// Приводит содержимое вложенных структур к тому, что переживёт
-    /// JSONSerialization.
-    ///
-    /// На Android мост прогоняет данные через JSON.stringify, поэтому туда
-    /// доезжают только строки, числа, булевы, null и контейнеры. На iOS мост
-    /// отдаёт объекты как есть, и внутри могут оказаться NaN, бесконечности и
-    /// Date. Любой из них проваливает isValidJSONObject для ВСЕГО контейнера, и
-    /// в отчёт ушло бы Swift-описание вида `["a": nan]` вместо JSON.
-    private static func sanitizeForJson(_ value: Any) -> Any {
+    /// Пишет JSON так же, как Android-двойник (toCanonicalJson): ключи
+    /// отсортированы, строки экранированы по правилам org.json, числа - по
+    /// правилам Java.
+    private static func appendCanonicalJson(_ out: inout String, _ value: Any) {
         if let dictionary = value as? [String: Any] {
-            var result: [String: Any] = [:]
-            for (key, nested) in dictionary { result[key] = sanitizeForJson(nested) }
-            return result
+            out += "{"
+            var isFirst = true
+            for key in dictionary.keys.sorted() {
+                if !isFirst { out += "," }
+                isFirst = false
+                appendQuoted(&out, key)
+                out += ":"
+                appendCanonicalJson(&out, dictionary[key] as Any)
+            }
+            out += "}"
+            return
         }
         if let array = value as? [Any] {
-            return array.map { sanitizeForJson($0) }
+            out += "["
+            for (index, item) in array.enumerated() {
+                if index > 0 { out += "," }
+                appendCanonicalJson(&out, item)
+            }
+            out += "]"
+            return
         }
-        if value is NSNull { return value }
-        if let string = value as? String { return string }
+        if value is NSNull {
+            out += "null"
+            return
+        }
+        if let string = value as? String {
+            appendQuoted(&out, string)
+            return
+        }
         if let number = value as? NSNumber {
-            // Булево - это тоже NSNumber, но конечное: проверять его не нужно.
-            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number }
-            // JSON.stringify отдаёт нечисло как null - повторяем.
-            return number.doubleValue.isFinite ? number : NSNull()
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                out += number.boolValue ? "true" : "false"
+            } else if !number.doubleValue.isFinite {
+                // JSON.stringify на Android превращает нечисло в null.
+                out += "null"
+            } else if let intValue = Int64(exactly: number) {
+                out += String(intValue)
+            } else {
+                out += javaDoubleString(number.doubleValue)
+            }
+            return
         }
-        if let date = value as? Date { return isoFormatter.string(from: date) }
-        // Всё остальное JSON не переживёт - отдаём текстом, как Date.prototype.toJSON.
-        return String(describing: value)
+        appendQuoted(&out, String(describing: value))
     }
 
-    /// Тот же формат, что даёт Date.prototype.toJSON на Android: с миллисекундами.
-    private static let isoFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
+    /// Экранирование как в org.json: помимо обычного набора экранируется «/»
+    /// и разделители строк U+2028/U+2029.
+    private static func appendQuoted(_ out: inout String, _ text: String) {
+        out += "\""
+        for character in text.unicodeScalars {
+            switch character {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "/": out += "\\/"
+            case "\u{08}": out += "\\b"
+            case "\u{0C}": out += "\\f"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if character.value < 0x20 || character.value == 0x2028 || character.value == 0x2029 {
+                    out += String(format: "\\u%04x", character.value)
+                } else {
+                    out.unicodeScalars.append(character)
+                }
+            }
+        }
+        out += "\""
+    }
 
     /// Повторяет формат Java `String.valueOf(double)`.
     private static func javaDoubleString(_ value: Double) -> String {

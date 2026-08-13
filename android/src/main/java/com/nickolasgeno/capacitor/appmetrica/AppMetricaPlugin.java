@@ -1,5 +1,7 @@
 package com.nickolasgeno.capacitor.appmetrica;
 
+import android.app.Application;
+import android.content.Context;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -61,7 +63,16 @@ public class AppMetricaPlugin extends Plugin {
 
         try {
             AppMetricaConfig config = AppMetricaConfig.newConfigBuilder(apiKey).build();
-            AppMetrica.activate(getContext(), config);
+            // Поднимаем на Application, а не на Activity: от контекста зависит,
+            // будет ли SDK считать сессии сам.
+            Context appContext = getContext().getApplicationContext();
+            AppMetrica.activate(appContext, config);
+            // На iOS автоматический учёт сессий включается сам, на Android его
+            // надо попросить явно - иначе длительность и количество сессий в
+            // отчётах расходятся между платформами.
+            if (appContext instanceof Application) {
+                AppMetrica.enableActivityAutoTracking((Application) appContext);
+            }
             activatedApiKey = apiKey;
             Log.d(TAG, "AppMetrica initialized successfully");
             call.resolve();
