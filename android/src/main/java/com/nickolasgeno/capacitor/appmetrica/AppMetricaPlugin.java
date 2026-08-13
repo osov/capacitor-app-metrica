@@ -1,5 +1,7 @@
 package com.nickolasgeno.capacitor.appmetrica;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -21,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @CapacitorPlugin(name = "AppMetrica")
 public class AppMetricaPlugin extends Plugin {
     private static final String TAG = "AppMetrica";
+    private static final long DEVICE_ID_TIMEOUT_MS = 10000;
 
     private boolean isInitialized = false;
 
@@ -138,21 +141,18 @@ public class AppMetricaPlugin extends Plugin {
                     @Override
                     public void onReceive(Result result) {
                         if (!isSettled.compareAndSet(false, true)) return;
-                        if (result != null) {
-                            String deviceId = result.deviceId;
-                            JSObject ret = new JSObject();
-                            ret.put("deviceId", deviceId != null ? deviceId : "");
-                            call.resolve(ret);
-                        } else {
-                            call.reject("Failed to get device ID");
-                        }
+                        String deviceId = result == null ? null : result.deviceId;
+                        resolveDeviceId(call, deviceId);
                     }
 
                     @Override
                     public void onRequestError(Reason reason, Result result) {
                         if (!isSettled.compareAndSet(false, true)) return;
-                        Log.e(TAG, "Error getting device ID: " + reason.toString());
-                        call.reject("Error getting device ID: " + reason.toString());
+                        // Идентификатор появляется только после синхронизации со
+                        // стартапом. Это не ошибка вызова: отдаём пустую строку,
+                        // как это делает iOS, чтобы поведение совпадало.
+                        Log.d(TAG, "Device ID is not available yet: " + reason);
+                        resolveDeviceId(call, null);
                     }
                 },
                 Arrays.asList(StartupParamsCallback.APPMETRICA_DEVICE_ID)
@@ -161,6 +161,24 @@ public class AppMetricaPlugin extends Plugin {
             if (!isSettled.compareAndSet(false, true)) return;
             Log.e(TAG, "Error getting device ID: " + e.getMessage());
             call.reject("Error getting device ID: " + e.getMessage());
+            return;
         }
+
+        // Без сети SDK может не позвать колбэк вовсе - не держим вызов вечно.
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (!isSettled.compareAndSet(false, true)) return;
+            Log.d(TAG, "Device ID request timed out");
+            resolveDeviceId(call, null);
+        }, DEVICE_ID_TIMEOUT_MS);
+    }
+
+    /**
+     * Идентификатор до первой синхронизации со стартапом отсутствует - это
+     * штатная ситуация, поэтому отвечаем пустой строкой, а не отклонением.
+     */
+    private void resolveDeviceId(PluginCall call, String deviceId) {
+        JSObject ret = new JSObject();
+        ret.put("deviceId", deviceId != null ? deviceId : "");
+        call.resolve(ret);
     }
 }
