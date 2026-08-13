@@ -61,8 +61,18 @@ public class AppMetricaPlugin extends Plugin {
             return;
         }
 
+        AppMetricaConfig config;
         try {
-            AppMetricaConfig config = AppMetricaConfig.newConfigBuilder(apiKey).build();
+            config = AppMetricaConfig.newConfigBuilder(apiKey).build();
+        } catch (Exception e) {
+            // Ключ не той формы. Отдельная ошибка, как на iOS: там негодный
+            // ключ отсекает сам инициализатор конфигурации.
+            Log.e(TAG, "Invalid AppMetrica apiKey");
+            call.reject("Invalid AppMetrica apiKey");
+            return;
+        }
+
+        try {
             // Поднимаем на Application, а не на Activity: от контекста зависит,
             // будет ли SDK считать сессии сам.
             Context appContext = getContext().getApplicationContext();
@@ -154,7 +164,8 @@ public class AppMetricaPlugin extends Plugin {
             out.append('{');
             for (int i = 0; i < keys.size(); i++) {
                 if (i > 0) out.append(',');
-                out.append(JSONObject.quote(keys.get(i))).append(':');
+                appendQuoted(out, keys.get(i));
+                out.append(':');
                 appendCanonicalJson(out, object.opt(keys.get(i)));
             }
             out.append('}');
@@ -175,12 +186,41 @@ public class AppMetricaPlugin extends Plugin {
             return;
         }
         if (value instanceof String) {
-            out.append(JSONObject.quote((String) value));
+            appendQuoted(out, (String) value);
             return;
         }
         // Числа и булевы печатаются как есть: org.json уже разобрал их из того
         // же JSON.stringify, что видит и iOS.
         out.append(String.valueOf(value));
+    }
+
+    /**
+     * Экранирование строки для JSON. Правила заданы здесь явно и повторены
+     * один в один в iOS-версии: кавычка, обратный и прямой слеш, управляющие
+     * символы и разделители строк U+2028/U+2029.
+     */
+    private static void appendQuoted(StringBuilder out, String text) {
+        out.append('"');
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '"': out.append("\\\""); break;
+                case '\\': out.append("\\\\"); break;
+                case '/': out.append("\\/"); break;
+                case '\b': out.append("\\b"); break;
+                case '\f': out.append("\\f"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default:
+                    if (c < 0x20 || c == 0x2028 || c == 0x2029) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+            }
+        }
+        out.append('"');
     }
 
     /**
