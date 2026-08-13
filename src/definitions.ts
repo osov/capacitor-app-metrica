@@ -11,9 +11,10 @@ export interface ReportEventOptions {
    */
   name: string;
   /**
-   * Optional event parameters
+   * Optional event parameters. Values of any type are accepted: both native
+   * sides convert them to strings before handing them to AppMetrica.
    */
-  params?: Record<string, string>;
+  params?: Record<string, unknown>;
 }
 
 export interface SetUserProfileIDOptions {

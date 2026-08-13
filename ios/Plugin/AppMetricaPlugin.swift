@@ -99,18 +99,52 @@ public class AppMetricaPlugin: CAPPlugin {
             }
             // Целые значения не должны превращаться в "1.0".
             if let intValue = Int64(exactly: number) { return String(intValue) }
-            return number.stringValue
+            // String.valueOf(double) в Java уходит в научную запись при
+            // |x| >= 1e7 или |x| < 1e-3. Повторяем, иначе одно и то же число
+            // выглядит в отчётах по-разному на двух платформах.
+            return javaDoubleString(number.doubleValue)
         }
 
         if let string = value as? String { return string }
 
-        // Вложенные объекты и массивы Android отдаёт как JSON-текст.
+        // Вложенные объекты и массивы Android отдаёт как JSON-текст. Ключи
+        // сортируем: у Android порядок вставки стабилен, у Foundation - хеш,
+        // и без сортировки одно событие меняло бы вид от запуска к запуску.
         if JSONSerialization.isValidJSONObject(value),
-           let data = try? JSONSerialization.data(withJSONObject: value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             return json
         }
 
         return String(describing: value)
+    }
+
+    /// Повторяет формат Java `String.valueOf(double)`.
+    private static func javaDoubleString(_ value: Double) -> String {
+        if value == 0 { return value.sign == .minus ? "-0.0" : "0.0" }
+        if value.isNaN { return "NaN" }
+        if value.isInfinite { return value < 0 ? "-Infinity" : "Infinity" }
+
+        let magnitude = abs(value)
+        if magnitude >= 1e-3 && magnitude < 1e7 {
+            // Обычная запись; целые значения Java пишет с ".0".
+            let text = String(format: "%.17g", value)
+            let shortest = shortestRoundTrip(value) ?? text
+            return shortest.contains(".") || shortest.contains("e") ? shortest : shortest + ".0"
+        }
+
+        // Научная запись вида 1.23456785E7 - с большой E и без плюса.
+        var text = String(format: "%.17E", value)
+        if let shortest = shortestRoundTrip(value, scientific: true) { text = shortest }
+        return text.replacingOccurrences(of: "E+", with: "E")
+    }
+
+    /// Кратчайшая запись, которая читается обратно без потери точности.
+    private static func shortestRoundTrip(_ value: Double, scientific: Bool = false) -> String? {
+        for precision in 1...17 {
+            let text = String(format: scientific ? "%.\(precision)E" : "%.\(precision)g", value)
+            if Double(text) == value { return text }
+        }
+        return nil
     }
 }
