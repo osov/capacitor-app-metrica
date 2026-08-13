@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(name = "AppMetrica")
 public class AppMetricaPlugin extends Plugin {
@@ -74,7 +75,10 @@ public class AppMetricaPlugin extends Plugin {
                 Iterator<String> keys = params.keys();
                 while (keys.hasNext()) {
                     String key = keys.next();
-                    paramsMap.put(key, params.getString(key));
+                    // getString() отдаёт null для чисел, булевых и вложенных
+                    // объектов - такие параметры молча терялись.
+                    Object value = params.opt(key);
+                    paramsMap.put(key, value == null ? "" : String.valueOf(value));
                 }
                 AppMetrica.reportEvent(eventName, paramsMap);
             } else {
@@ -124,12 +128,16 @@ public class AppMetricaPlugin extends Plugin {
             return;
         }
 
+        // SDK может вызвать оба колбэка; отвечаем ровно один раз.
+        final AtomicBoolean isSettled = new AtomicBoolean(false);
+
         try {
             AppMetrica.requestStartupParams(
                 getContext(),
                 new StartupParamsCallback() {
                     @Override
                     public void onReceive(Result result) {
+                        if (!isSettled.compareAndSet(false, true)) return;
                         if (result != null) {
                             String deviceId = result.deviceId;
                             JSObject ret = new JSObject();
@@ -142,6 +150,7 @@ public class AppMetricaPlugin extends Plugin {
 
                     @Override
                     public void onRequestError(Reason reason, Result result) {
+                        if (!isSettled.compareAndSet(false, true)) return;
                         Log.e(TAG, "Error getting device ID: " + reason.toString());
                         call.reject("Error getting device ID: " + reason.toString());
                     }
@@ -149,6 +158,7 @@ public class AppMetricaPlugin extends Plugin {
                 Arrays.asList(StartupParamsCallback.APPMETRICA_DEVICE_ID)
             );
         } catch (Exception e) {
+            if (!isSettled.compareAndSet(false, true)) return;
             Log.e(TAG, "Error getting device ID: " + e.getMessage());
             call.reject("Error getting device ID: " + e.getMessage());
         }

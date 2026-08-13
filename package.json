@@ -1,6 +1,6 @@
 {
   "name": "capacitor-app-metrica",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "Capacitor plugin for Yandex AppMetrica analytics",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -11,16 +11,16 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "AppMetrica.podspec"
+    "CapacitorAppMetrica.podspec"
   ],
   "author": "osova",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickolasgeno/capacitor-app-metrica.git"
+    "url": "git+https://github.com/osov/capacitor-app-metrica.git"
   },
   "bugs": {
-    "url": "https://github.com/nickolasgeno/capacitor-app-metrica/issues"
+    "url": "https://github.com/osov/capacitor-app-metrica/issues"
   },
   "keywords": [
     "capacitor",
@@ -42,7 +42,8 @@
     "build": "npm run clean && tsc && rollup -c rollup.config.js",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "npm run build"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",
