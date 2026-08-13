@@ -1,7 +1,5 @@
 package com.nickolasgeno.capacitor.appmetrica;
 
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -12,18 +10,14 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import io.appmetrica.analytics.AppMetrica;
 import io.appmetrica.analytics.AppMetricaConfig;
-import io.appmetrica.analytics.StartupParamsCallback;
 
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(name = "AppMetrica")
 public class AppMetricaPlugin extends Plugin {
     private static final String TAG = "AppMetrica";
-    private static final long DEVICE_ID_TIMEOUT_MS = 10000;
 
     private boolean isInitialized = false;
 
@@ -131,45 +125,16 @@ public class AppMetricaPlugin extends Plugin {
             return;
         }
 
-        // SDK может вызвать оба колбэка; отвечаем ровно один раз.
-        final AtomicBoolean isSettled = new AtomicBoolean(false);
-
         try {
-            AppMetrica.requestStartupParams(
-                getContext(),
-                new StartupParamsCallback() {
-                    @Override
-                    public void onReceive(Result result) {
-                        if (!isSettled.compareAndSet(false, true)) return;
-                        String deviceId = result == null ? null : result.deviceId;
-                        resolveDeviceId(call, deviceId);
-                    }
-
-                    @Override
-                    public void onRequestError(Reason reason, Result result) {
-                        if (!isSettled.compareAndSet(false, true)) return;
-                        // Идентификатор появляется только после синхронизации со
-                        // стартапом. Это не ошибка вызова: отдаём пустую строку,
-                        // как это делает iOS, чтобы поведение совпадало.
-                        Log.d(TAG, "Device ID is not available yet: " + reason);
-                        resolveDeviceId(call, null);
-                    }
-                },
-                Arrays.asList(StartupParamsCallback.APPMETRICA_DEVICE_ID)
-            );
+            // Синхронный геттер вместо requestStartupParams: тот без сети не
+            // отвечает вовсе, из-за чего вызов ждал таймаута, а отложенный
+            // Runnable всё это время держал Activity. Здесь же ответ мгновенный,
+            // а до синхронизации со стартапом идентификатора просто нет.
+            resolveDeviceId(call, AppMetrica.getDeviceId(getContext()));
         } catch (Exception e) {
-            if (!isSettled.compareAndSet(false, true)) return;
             Log.e(TAG, "Error getting device ID: " + e.getMessage());
             call.reject("Error getting device ID: " + e.getMessage());
-            return;
         }
-
-        // Без сети SDK может не позвать колбэк вовсе - не держим вызов вечно.
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (!isSettled.compareAndSet(false, true)) return;
-            Log.d(TAG, "Device ID request timed out");
-            resolveDeviceId(call, null);
-        }, DEVICE_ID_TIMEOUT_MS);
     }
 
     /**

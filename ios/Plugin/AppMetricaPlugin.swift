@@ -136,7 +136,28 @@ public class AppMetricaPlugin: CAPPlugin {
         // Научная запись вида 1.23456785E7 - с большой E и без плюса.
         var text = String(format: "%.17E", value)
         if let shortest = shortestRoundTrip(value, scientific: true) { text = shortest }
-        return text.replacingOccurrences(of: "E+", with: "E")
+        return normalizeExponent(text)
+    }
+
+    /// C печатает экспоненту минимум двумя цифрами и со знаком (`E+07`, `E-04`),
+    /// Java - без плюса и без ведущих нулей (`E7`, `E-4`). Приводим к Java.
+    private static func normalizeExponent(_ text: String) -> String {
+        guard let range = text.range(of: "E") else { return text }
+        let mantissa = String(text[text.startIndex..<range.lowerBound])
+        var exponent = String(text[range.upperBound...])
+
+        var sign = ""
+        if exponent.hasPrefix("+") {
+            exponent.removeFirst()
+        } else if exponent.hasPrefix("-") {
+            sign = "-"
+            exponent.removeFirst()
+        }
+
+        while exponent.count > 1 && exponent.hasPrefix("0") {
+            exponent.removeFirst()
+        }
+        return mantissa + "E" + sign + exponent
     }
 
     /// Кратчайшая запись, которая читается обратно без потери точности.
