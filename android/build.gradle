@@ -52,7 +52,7 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     // 8.3.0+ обязательна, если в приложении используется Yandex Mobile Ads 8.x.
-    implementation 'io.appmetrica.analytics:analytics:8.5.0'
+    implementation 'io.appmetrica.analytics:analytics:8.5.1'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
